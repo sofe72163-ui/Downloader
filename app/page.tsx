@@ -28,13 +28,12 @@ export default function Home() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'حدث خطأ غير معروف');
+        throw new Error(data.error || 'حدث خطأ أثناء جلب الحلقة');
       }
 
-      // الرابط الأصلي نستخدمه للتحميل
       setStreamUrl(data.streamUrl);
       
-      // الرابط الممرر نستخدمه للمشغل الداخلي لتفادي الـ CORS
+      // نجهز رابط البروكسي عشان نستخدمه للمشغل وللتحميل
       setProxyUrl(`/api/proxy?url=${encodeURIComponent(data.streamUrl)}`);
     } catch (err: any) {
       setError(err.message);
@@ -79,22 +78,28 @@ export default function Home() {
 
         {proxyUrl && (
           <div className="space-y-6 animate-fade-in mt-8">
+            
+            {/* المشغل اللي يعرض الجودات */}
             <HlsPlayer src={proxyUrl} />
             
             <div className="p-6 bg-gray-900 rounded-lg border border-gray-800 space-y-4 text-center">
               <h3 className="text-xl font-bold text-white">الرابط جاهز</h3>
               <p className="text-sm text-gray-400">
-                يمكنك مشاهدة الحلقة في الأعلى، أو نسخ الرابط المباشر للتحميل عبر برامج التنزيل مثل 1DM أو IDM.
+                يمكنك مشاهدة الحلقة في الأعلى وتغيير الجودة، أو نسخ رابط التحميل واستخدامه في برامج التنزيل.
               </p>
               
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <a
-                  href={streamUrl}
-                  target="_blank"
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md font-semibold transition"
+                <button
+                  onClick={() => {
+                    // نسخ رابط البروكسي (وليس الأصلي) لضمان تخطي حماية السيرفر أثناء التحميل
+                    const fullProxyUrl = window.location.origin + proxyUrl;
+                    navigator.clipboard.writeText(fullProxyUrl);
+                    alert('✅ تم نسخ الرابط بنجاح!\n\nافتح برنامج 1DM (في الهاتف) أو IDM (في الكمبيوتر) والصق الرابط ليبدأ التحميل.');
+                  }}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-md font-bold transition flex items-center justify-center gap-2"
                 >
-                  نسخ رابط التحميل (للبرامج)
-                </a>
+                  نسخ رابط التحميل (لبرامج 1DM/IDM)
+                </button>
               </div>
             </div>
           </div>
