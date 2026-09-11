@@ -40,15 +40,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'لم يتم العثور على الكود المشفر للمشغل' }, { status: 404 });
     }
 
-    // --- التعديل السحري: البروكسي "الثقب الأسود" ---
-    // أي شيء يطلبه السكربت المشفر سيعود له كدالة صالحة ولن يتوقف
+    // 5. الثقب الأسود المطور للرد على كل الخدع
     const blackholeProxy: any = new Proxy(function() {}, {
-      get: () => blackholeProxy,
+      get: (target: any, prop: string | symbol) => {
+        if (prop === Symbol.toPrimitive || prop === 'toString') return () => '';
+        if (prop === 'valueOf') return () => 0;
+        return blackholeProxy;
+      },
       apply: () => blackholeProxy,
-      set: () => true
+      set: () => true,
+      construct: () => blackholeProxy
     });
 
-    // 5. بناء بيئة وهمية محصنة لفك التشفير
+    // 6. بناء بيئة وهمية محصنة
     const sandbox: Record<string, any> = {
       extractedUrl: '',
       jwplayer: () => ({
@@ -59,21 +63,18 @@ export async function POST(req: Request) {
         getPosition: () => 0,
         seek: () => {}
       }),
-      // حماية الـ document ضد أي دوال مخفية
       document: new Proxy({
         getElementById: () => blackholeProxy,
         querySelector: () => blackholeProxy,
       }, {
-        get: (target: any, prop: string) => prop in target ? target[prop] : blackholeProxy
+        get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy
       }),
-      // حماية الـ window
       window: new Proxy({
         location: { href: '' }
       }, {
-        get: (target: any, prop: string) => prop in target ? target[prop] : blackholeProxy
+        get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy
       }),
       navigator: blackholeProxy,
-      // توفير دوال فك التشفير الأساسية (بما أن التشفير يحتاجها غالباً)
       atob: (str: string) => Buffer.from(str, 'base64').toString('binary'),
       btoa: (str: string) => Buffer.from(str, 'binary').toString('base64'),
     };
