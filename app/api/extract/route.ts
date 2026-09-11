@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import vm from 'vm';
 
 export const runtime = 'nodejs';
+const SCRAPER_API_KEY = '18b709da5bed0adaaf65b966b3e6dd1e';
 
 export async function POST(req: Request) {
   try {
@@ -10,34 +11,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'الرجاء إدخال رابط الحلقة' }, { status: 400 });
     }
 
-    // تمويه احترافي (Stealth Headers) لإقناع Cloudflare أننا متصفح حقيقي
-    const headers = { 
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1'
-    };
-    
-    const res1 = await fetch(url, { headers });
+    // جلب صفحة الفيلم عبر ScraperAPI
+    const proxyUrl1 = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}`;
+    const res1 = await fetch(proxyUrl1);
     const html1 = await res1.text();
-
-    // فحص إذا كان كلاودفلير لا يزال يغلق الطريق
-    if (html1.includes('Just a moment') || html1.includes('cloudflare')) {
-      return NextResponse.json({ error: 'حماية كلاودفلير منعت السيرفر من الدخول لصفحة الفيلم' }, { status: 403 });
-    }
 
     const playerMatch = html1.match(/(https?:\/\/[^"'\s]+\/video_player\?player_token=[^"'\s]+)/);
     const playerUrl = playerMatch?.[1];
     if (!playerUrl) {
-      return NextResponse.json({ error: 'لم يتم العثور على مشغل الفيديو (تأكد أن الرابط يخص فيلم وليس بوستر)' }, { status: 404 });
+      return NextResponse.json({ error: 'لم يتم العثور على مشغل الفيديو (تأكد أن الرابط صحيح)' }, { status: 404 });
     }
 
-    const res2 = await fetch(playerUrl, { headers: { ...headers, Referer: url } });
+    // جلب كود المشغل مع الحفاظ على الهويات المطلوبة (keep_headers)
+    const proxyUrl2 = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&keep_headers=true&url=${encodeURIComponent(playerUrl)}`;
+    const res2 = await fetch(proxyUrl2, {
+      headers: { 'Referer': url }
+    });
     const html2 = await res2.text();
 
     const scripts = html2.match(/<script[^>]*>([\s\S]*?)<\/script>/gi) || [];
@@ -69,22 +58,13 @@ export async function POST(req: Request) {
       return jqueryMock;
     }, {
       get: (target: any, prop: string | symbol) => {
-        if (prop === 'ready') {
-          return (fn: any) => {
-            if (typeof fn === 'function') {
-              try { fn(); } catch (e) {}
-            }
-            return jqueryMock;
-          };
-        }
+        if (prop === 'ready') return (fn: any) => { if (typeof fn === 'function') { try { fn(); } catch (e) {} } return jqueryMock; };
         if (prop === Symbol.toPrimitive || prop === 'toString') return () => '';
         if (prop === 'valueOf') return () => 0;
         return blackholeProxy;
       },
       apply: (target: any, thisArg: any, args: any[]) => {
-        if (typeof args[0] === 'function') {
-          try { args[0](); } catch (e) {}
-        }
+        if (typeof args[0] === 'function') { try { args[0](); } catch (e) {} }
         return jqueryMock;
       },
       set: () => true
@@ -100,10 +80,7 @@ export async function POST(req: Request) {
             return playerInstance;
           }
         }, {
-          get: (target: any, prop: string | symbol) => {
-            if (prop in target) return target[prop as keyof typeof target];
-            return blackholeProxy;
-          }
+          get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy
         });
         return playerInstance;
       },
@@ -112,12 +89,8 @@ export async function POST(req: Request) {
       document: new Proxy({
         getElementById: () => blackholeProxy,
         querySelector: () => blackholeProxy,
-      }, {
-        get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy
-      }),
-      window: new Proxy({ location: { href: '' } }, {
-        get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy
-      }),
+      }, { get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy }),
+      window: new Proxy({ location: { href: '' } }, { get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy }),
       navigator: blackholeProxy,
       atob: (str: string) => Buffer.from(str, 'base64').toString('binary'),
       btoa: (str: string) => Buffer.from(str, 'binary').toString('base64'),
