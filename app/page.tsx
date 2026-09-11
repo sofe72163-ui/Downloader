@@ -1,32 +1,106 @@
-import PlayerConsole from "@/components/PlayerConsole";
+'use client';
+import { useState } from 'react';
+import HlsPlayer from '@/components/HlsPlayer';
 
-export default function HomePage() {
+export default function Home() {
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [streamUrl, setStreamUrl] = useState('');
+  const [proxyUrl, setProxyUrl] = useState('');
+
+  const handleExtract = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url) return;
+
+    setLoading(true);
+    setError('');
+    setStreamUrl('');
+    setProxyUrl('');
+
+    try {
+      const res = await fetch('/api/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'حدث خطأ غير معروف');
+      }
+
+      // الرابط الأصلي نستخدمه للتحميل
+      setStreamUrl(data.streamUrl);
+      
+      // الرابط الممرر نستخدمه للمشغل الداخلي لتفادي الـ CORS
+      setProxyUrl(`/api/proxy?url=${encodeURIComponent(data.streamUrl)}`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <main className="min-h-screen px-4 py-10 sm:py-16">
-      <div className="mx-auto mb-10 max-w-3xl">
-        <div className="flex items-center gap-2 font-mono text-xs text-signal">
-          <span className="h-1.5 w-1.5 rounded-full bg-signal" />
-          <span>hls player</span>
+    <main className="min-h-screen bg-gray-950 text-gray-200 p-6 md:p-12 font-sans">
+      <div className="max-w-4xl mx-auto space-y-8">
+        
+        <div className="text-center space-y-2">
+          <h1 className="text-3xl font-bold text-white">مشغل الوسائط الخاص</h1>
+          <p className="text-gray-400">ضع رابط الحلقة مباشرة من الموقع ليتم جلبها بدون إعلانات</p>
         </div>
-        <h1 className="mt-3 text-3xl font-semibold text-ink sm:text-4xl">
-          Play any HLS stream, straight from a URL
-        </h1>
-        <p className="mt-3 max-w-xl text-sm leading-relaxed text-ink-muted sm:text-base">
-          Paste a .m3u8 manifest and it loads with adaptive bitrate switching,
-          live resolution and codec readouts, and manual quality control —
-          no upload, no account, nothing stored.
-        </p>
+
+        <form onSubmit={handleExtract} className="flex flex-col md:flex-row gap-3">
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://web911...faselhdx.life/..."
+            className="flex-1 px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:border-teal-500 transition-colors text-left"
+            dir="ltr"
+            required
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-8 py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-lg transition-colors disabled:opacity-50"
+          >
+            {loading ? 'جاري السحب...' : 'تشغيل الحلقة'}
+          </button>
+        </form>
+
+        {error && (
+          <div className="p-4 bg-red-900/50 border border-red-500/50 rounded-lg text-red-200 text-center">
+            {error}
+          </div>
+        )}
+
+        {proxyUrl && (
+          <div className="space-y-6 animate-fade-in mt-8">
+            <HlsPlayer src={proxyUrl} />
+            
+            <div className="p-6 bg-gray-900 rounded-lg border border-gray-800 space-y-4 text-center">
+              <h3 className="text-xl font-bold text-white">الرابط جاهز</h3>
+              <p className="text-sm text-gray-400">
+                يمكنك مشاهدة الحلقة في الأعلى، أو نسخ الرابط المباشر للتحميل عبر برامج التنزيل مثل 1DM أو IDM.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <a
+                  href={streamUrl}
+                  target="_blank"
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md font-semibold transition"
+                >
+                  نسخ رابط التحميل (للبرامج)
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
-
-      <PlayerConsole />
-
-      <footer className="mx-auto mt-16 max-w-3xl border-t border-console-line pt-6">
-        <p className="font-mono text-xs text-ink-faint">
-          Playback runs entirely in your browser via hls.js. This tool does
-          not fetch, host, or redistribute video — you provide the manifest
-          URL and control what it plays.
-        </p>
-      </footer>
     </main>
   );
 }
