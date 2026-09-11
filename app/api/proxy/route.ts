@@ -1,54 +1,53 @@
 import { NextResponse } from 'next/server';
+import * as cheerio from 'cheerio';
+
+export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const targetUrl = searchParams.get('url');
+  const query = searchParams.get('q');
   
-  if (!targetUrl) return new NextResponse('Missing URL', { status: 400 });
+  if (!query) return NextResponse.json({ error: 'الرجاء إدخال كلمة البحث' }, { status: 400 });
+
+  const baseUrl = 'https://web91112x.faselhdx.life';
+  const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
 
   try {
-    const origin = new URL(targetUrl).origin;
-    
-    // جلب البث مع تزييف مصدر الطلب (Referer) ليقبله سيرفر الفيديو
-    const res = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': origin + '/',
-        'Origin': origin
+    const res = await fetch(searchUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    const results: any[] = [];
+
+    // وسعنا دائرة البحث لتشمل الكلاسات المشهورة في قوالب مواقع الأفلام
+    $('.post-div, .item, .movie, .post, .col-md-2, .col-sm-4, .col-6, .h-block').each((i, el) => {
+      const title = $(el).find('.title, .post-title, h2, h3').text().trim();
+      const url = $(el).find('a').attr('href') || '';
+      let image = $(el).find('img').attr('data-src') || $(el).find('img').attr('src') || '';
+      
+      // تصليح مسار الصور إذا كان ناقص
+      if (image.startsWith('//')) image = 'https:' + image;
+      else if (image.startsWith('/')) image = baseUrl + image;
+
+      const isSeries = url.includes('series') || url.includes('asian-') || url.includes('season');
+
+      if (title && url) {
+        results.push({ title, url, image, isSeries });
       }
     });
 
-    if (!res.ok) throw new Error(`Upstream error: ${res.status}`);
-
-    const contentType = res.headers.get('content-type') || 'application/octet-stream';
-    const isM3u8 = targetUrl.includes('.m3u8') || contentType.includes('mpegurl');
-
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Content-Type': contentType,
-    };
-
-    // إذا كان الملف هو قائمة تشغيل m3u8، نقوم بتعديل الروابط بداخلها لتمر عبر البروكسي أيضاً
-    if (isM3u8) {
-      const text = await res.text();
-      const baseUrl = new URL(targetUrl);
-      
-      const rewrittenLines = text.split('\n').map(line => {
-        const trimmed = line.trim();
-        // السطور التي لا تبدأ بـ # هي روابط لملفات m3u8 أخرى أو أجزاء .ts
-        if (trimmed && !trimmed.startsWith('#')) {
-          const absoluteUrl = new URL(trimmed, baseUrl).href;
-          return `/api/proxy?url=${encodeURIComponent(absoluteUrl)}`;
-        }
-        return line;
-      });
-      
-      return new NextResponse(rewrittenLines.join('\n'), { headers: corsHeaders });
-    } else {
-      // إذا كان جزء فيديو (.ts) نمرره كبيانات خام
-      return new NextResponse(res.body as any, { headers: corsHeaders });
+    // ميزة كشف المشكلة: إذا القائمة فارغة، رجع عنوان الصفحة للمستخدم
+    if (results.length === 0) {
+      const pageTitle = $('title').text().trim() || 'بدون عنوان';
+      return NextResponse.json({ 
+        error: `لم نجد نتائج. (عنوان الصفحة المسحوبة من السيرفر: ${pageTitle})` 
+      }, { status: 404 });
     }
-  } catch (err: any) {
-    return new NextResponse(err.message, { status: 500 });
+
+    return NextResponse.json({ results });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
