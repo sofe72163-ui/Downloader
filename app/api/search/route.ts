@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
+const SCRAPER_API_KEY = '18b709da5bed0adaaf65b966b3e6dd1e';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -11,20 +12,13 @@ export async function GET(req: Request) {
 
   const baseUrl = 'https://web91112x.faselhdx.life';
   const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
+  
+  // توجيه الطلب عبر شبكة ScraperAPI لتخطي كلاودفلير
+  const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(searchUrl)}`;
 
   try {
-    const headers = { 
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3'
-    };
-
-    const res = await fetch(searchUrl, { headers });
+    const res = await fetch(proxyUrl);
     const html = await res.text();
-
-    if (html.includes('Just a moment') || html.includes('cloudflare')) {
-      return NextResponse.json({ error: 'عذراً، نظام حماية الموقع (Cloudflare) حظر عملية البحث.' }, { status: 403 });
-    }
 
     const $ = cheerio.load(html);
     const results: any[] = [];
@@ -45,7 +39,7 @@ export async function GET(req: Request) {
     });
 
     if (results.length === 0) {
-      return NextResponse.json({ error: `لم نجد نتائج.` }, { status: 404 });
+      return NextResponse.json({ error: `لم نجد نتائج. (تأكد من كتابة الاسم بشكل صحيح)` }, { status: 404 });
     }
 
     return NextResponse.json({ results });
