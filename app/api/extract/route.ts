@@ -41,10 +41,9 @@ export async function POST(req: Request) {
 
     // --- بناء بيئة وهمية (Sandbox) لا يمكن كسرها ---
 
-    // أداة امتصاص الأخطاء: تنجح دائماً بغض النظر عما يطلبه السكربت المشفر
+    // 1. الثقب الأسود لامتصاص الدوال العشوائية وإرجاع قيم فارغة آمنة
     const blackholeProxy: any = new Proxy(function() {}, {
       get: (target: any, prop: string | symbol) => {
-        // حماية ضد محاولات التحويل إلى نصوص أو أرقام
         if (prop === Symbol.toPrimitive || prop === 'toString') return () => '';
         if (prop === 'valueOf') return () => 0;
         return blackholeProxy;
@@ -54,22 +53,50 @@ export async function POST(req: Request) {
       construct: () => blackholeProxy
     });
 
+    // 2. محاكاة ذكية لـ jQuery ($) لتنفيذ الأكواد المخفية بداخله بدلاً من تجاهلها
+    const jqueryMock: any = new Proxy(function(arg: any) {
+      // إذا كان السكربت يحاول تشغيل دالة مثل $(function(){...})
+      if (typeof arg === 'function') {
+        try { arg(); } catch (e) {}
+      }
+      return jqueryMock;
+    }, {
+      get: (target: any, prop: string | symbol) => {
+        // إذا استدعى $(document).ready(function(){...})
+        if (prop === 'ready') {
+          return (fn: any) => {
+            if (typeof fn === 'function') {
+              try { fn(); } catch (e) {}
+            }
+            return jqueryMock;
+          };
+        }
+        if (prop === Symbol.toPrimitive || prop === 'toString') return () => '';
+        if (prop === 'valueOf') return () => 0;
+        return blackholeProxy;
+      },
+      apply: (target: any, thisArg: any, args: any[]) => {
+        if (typeof args[0] === 'function') {
+          try { args[0](); } catch (e) {}
+        }
+        return jqueryMock;
+      },
+      set: () => true
+    });
+
     const sandbox: Record<string, any> = {
       extractedUrl: '',
       
-      // محاكاة JWPlayer ذكية: تصطاد الرابط وتمتص باقي الدوال (مثل .on)
+      // 3. محاكاة JWPlayer لاصطياد الرابط وتمتص باقي الدوال (مثل .on)
       jwplayer: () => {
         const playerInstance = new Proxy({
           setup: (conf: any) => {
-            // التقاط الرابط بمجرد محاولة تشغيل الفيديو
             if (conf?.file) sandbox.extractedUrl = conf.file;
             else if (conf?.sources?.[0]?.file) sandbox.extractedUrl = conf.sources[0].file;
-            // إرجاع المشغل نفسه للسماح بسلسلة الاستدعاءات (مثلاً jwplayer().setup().on())
             return playerInstance;
           }
         }, {
           get: (target: any, prop: string | symbol) => {
-            // إذا طلب الدالة setup نعطيها له، غير ذلك نرسله للثقب الأسود (ليتجاوز .on وغيرها بصمت)
             if (prop in target) return target[prop as keyof typeof target];
             return blackholeProxy;
           }
@@ -77,7 +104,11 @@ export async function POST(req: Request) {
         return playerInstance;
       },
 
-      // حماية كائنات المتصفح الأساسية (document و window)
+      // 4. حقن الـ jQuery في البيئة
+      $: jqueryMock,
+      jQuery: jqueryMock,
+
+      // 5. حماية كائنات المتصفح الأساسية (document و window)
       document: new Proxy({
         getElementById: () => blackholeProxy,
         querySelector: () => blackholeProxy,
@@ -96,12 +127,12 @@ export async function POST(req: Request) {
       btoa: (str: string) => Buffer.from(str, 'binary').toString('base64'),
     };
 
-    // 5. تشغيل السكربت في البيئة المحمية
+    // 6. تشغيل السكربت في البيئة المحمية
     vm.createContext(sandbox);
     vm.runInContext(targetScript + ';', sandbox);
 
     if (!sandbox.extractedUrl) {
-      return NextResponse.json({ error: 'اكتمل السكربت ولكن لم يتم العثور على رابط البث' }, { status: 500 });
+      return NextResponse.json({ error: 'تم فك التشفير ولكن لم يتم العثور على رابط البث' }, { status: 500 });
     }
 
     return NextResponse.json({ streamUrl: sandbox.extractedUrl });
