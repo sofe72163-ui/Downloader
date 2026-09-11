@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import vm from 'vm';
 
-export const runtime = 'nodejs'; // إجبار Vercel على استخدام بيئة Node الكاملة لدعم vm
+export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
   try {
     const { url } = await req.json();
-    if (!url) return NextResponse.json({ error: 'الرجاء إدخال رابط الحلقة' }, { status: 400 });
+    if (!url || typeof url !== 'string') {
+      return NextResponse.json({ error: 'الرجاء إدخال رابط الحلقة' }, { status: 400 });
+    }
 
     const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
     
@@ -17,12 +19,10 @@ export async function POST(req: Request) {
     // 2. البحث عن رابط المشغل
     const playerMatch = html1.match(/(https?:\/\/[^"'\s]+\/video_player\?player_token=[^"'\s]+)/);
     
-    // التعديل هنا: تأكيد إضافي لـ TypeScript أن الرابط موجود وليس undefined
-    if (!playerMatch || !playerMatch[1]) {
+    const playerUrl = playerMatch?.[1];
+    if (!playerUrl) {
       return NextResponse.json({ error: 'لم يتم العثور على مشغل الفيديو في هذه الصفحة' }, { status: 404 });
     }
-    
-    const playerUrl = playerMatch[1];
 
     // 3. جلب كود المشغل الداخلي
     const res2 = await fetch(playerUrl, { headers: { ...headers, Referer: url } });
@@ -36,21 +36,46 @@ export async function POST(req: Request) {
       if (clean.includes('_0x')) targetScript += clean + '\n';
     }
 
-    if (!targetScript) return NextResponse.json({ error: 'لم يتم العثور على الكود المشفر للمشغل' }, { status: 404 });
+    if (!targetScript) {
+      return NextResponse.json({ error: 'لم يتم العثور على الكود المشفر للمشغل' }, { status: 404 });
+    }
 
-    // 5. بناء بيئة وهمية لفك التشفير
-    const sandbox: any = {
+    // --- التعديل السحري: البروكسي "الثقب الأسود" ---
+    // أي شيء يطلبه السكربت المشفر سيعود له كدالة صالحة ولن يتوقف
+    const blackholeProxy: any = new Proxy(function() {}, {
+      get: () => blackholeProxy,
+      apply: () => blackholeProxy,
+      set: () => true
+    });
+
+    // 5. بناء بيئة وهمية محصنة لفك التشفير
+    const sandbox: Record<string, any> = {
       extractedUrl: '',
       jwplayer: () => ({
         setup: (conf: any) => {
-          if (conf.file) sandbox.extractedUrl = conf.file;
-          else if (conf.sources) sandbox.extractedUrl = conf.sources[0].file;
+          if (conf?.file) sandbox.extractedUrl = conf.file;
+          else if (conf?.sources?.[0]?.file) sandbox.extractedUrl = conf.sources[0].file;
         },
         getPosition: () => 0,
         seek: () => {}
       }),
-      document: { getElementById: () => ({}), querySelector: () => ({}) },
-      window: { location: { href: '' } }
+      // حماية الـ document ضد أي دوال مخفية
+      document: new Proxy({
+        getElementById: () => blackholeProxy,
+        querySelector: () => blackholeProxy,
+      }, {
+        get: (target: any, prop: string) => prop in target ? target[prop] : blackholeProxy
+      }),
+      // حماية الـ window
+      window: new Proxy({
+        location: { href: '' }
+      }, {
+        get: (target: any, prop: string) => prop in target ? target[prop] : blackholeProxy
+      }),
+      navigator: blackholeProxy,
+      // توفير دوال فك التشفير الأساسية (بما أن التشفير يحتاجها غالباً)
+      atob: (str: string) => Buffer.from(str, 'base64').toString('binary'),
+      btoa: (str: string) => Buffer.from(str, 'binary').toString('base64'),
     };
 
     vm.createContext(sandbox);
@@ -60,9 +85,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'فشل فك التشفير واستخراج الرابط' }, { status: 500 });
     }
 
-    // إرجاع الرابط الصافي
     return NextResponse.json({ streamUrl: sandbox.extractedUrl });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Internal Server Error' }, { status: 500 });
   }
 }
