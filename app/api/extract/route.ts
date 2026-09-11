@@ -14,9 +14,14 @@ export async function POST(req: Request) {
     const res1 = await fetch(url, { headers });
     const html1 = await res1.text();
 
-    // 2. البحث عن رابط المشغل (iframe أو redirect)
+    // 2. البحث عن رابط المشغل
     const playerMatch = html1.match(/(https?:\/\/[^"'\s]+\/video_player\?player_token=[^"'\s]+)/);
-    if (!playerMatch) return NextResponse.json({ error: 'لم يتم العثور على مشغل الفيديو في هذه الصفحة' }, { status: 404 });
+    
+    // التعديل هنا: تأكيد إضافي لـ TypeScript أن الرابط موجود وليس undefined
+    if (!playerMatch || !playerMatch[1]) {
+      return NextResponse.json({ error: 'لم يتم العثور على مشغل الفيديو في هذه الصفحة' }, { status: 404 });
+    }
+    
     const playerUrl = playerMatch[1];
 
     // 3. جلب كود المشغل الداخلي
@@ -33,7 +38,7 @@ export async function POST(req: Request) {
 
     if (!targetScript) return NextResponse.json({ error: 'لم يتم العثور على الكود المشفر للمشغل' }, { status: 404 });
 
-    // 5. بناء بيئة وهمية لفك التشفير بأمان واستخراج الرابط
+    // 5. بناء بيئة وهمية لفك التشفير
     const sandbox: any = {
       extractedUrl: '',
       jwplayer: () => ({
