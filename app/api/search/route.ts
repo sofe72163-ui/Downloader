@@ -13,16 +13,18 @@ export async function GET(req: Request) {
   const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
 
   try {
-    // استخدمنا خدمة AllOrigins كـ وسيط (كوبري) لتخطي حظر Cloudflare لسيرفرات Vercel
-    const bypassUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(searchUrl)}`;
-    
-    const res = await fetch(bypassUrl);
-    const data = await res.json();
-    
-    // صفحة الويب الحقيقية ستكون بداخل المتغير contents
-    const html = data.contents;
-    
-    if (!html) throw new Error('فشل جلب الصفحة من الوسيط');
+    const headers = { 
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3'
+    };
+
+    const res = await fetch(searchUrl, { headers });
+    const html = await res.text();
+
+    if (html.includes('Just a moment') || html.includes('cloudflare')) {
+      return NextResponse.json({ error: 'عذراً، نظام حماية الموقع (Cloudflare) حظر عملية البحث.' }, { status: 403 });
+    }
 
     const $ = cheerio.load(html);
     const results: any[] = [];
@@ -43,10 +45,7 @@ export async function GET(req: Request) {
     });
 
     if (results.length === 0) {
-      const pageTitle = $('title').text().trim() || 'بدون عنوان';
-      return NextResponse.json({ 
-        error: `لم نجد نتائج. (إذا كان العنوان Just a moment فهذا يعني أن كلاودفلير حظر الوسيط أيضاً)` 
-      }, { status: 404 });
+      return NextResponse.json({ error: `لم نجد نتائج.` }, { status: 404 });
     }
 
     return NextResponse.json({ results });
