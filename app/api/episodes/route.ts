@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
+const SCRAPER_API_KEY = '18b709da5bed0adaaf65b966b3e6dd1e';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -9,10 +10,10 @@ export async function GET(req: Request) {
   
   if (!url) return NextResponse.json({ error: 'الرجاء إرسال رابط المسلسل' }, { status: 400 });
 
+  const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}`;
+
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-    });
+    const res = await fetch(proxyUrl);
     const html = await res.text();
     const $ = cheerio.load(html);
 
