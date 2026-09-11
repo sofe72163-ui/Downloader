@@ -10,24 +10,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'الرجاء إدخال رابط الحلقة' }, { status: 400 });
     }
 
-    const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+    // تمويه احترافي (Stealth Headers) لإقناع Cloudflare أننا متصفح حقيقي
+    const headers = { 
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1'
+    };
     
-    // 1. جلب صفحة الحلقة الأساسية
     const res1 = await fetch(url, { headers });
     const html1 = await res1.text();
 
-    // 2. البحث عن رابط المشغل (iframe)
+    // فحص إذا كان كلاودفلير لا يزال يغلق الطريق
+    if (html1.includes('Just a moment') || html1.includes('cloudflare')) {
+      return NextResponse.json({ error: 'حماية كلاودفلير منعت السيرفر من الدخول لصفحة الفيلم' }, { status: 403 });
+    }
+
     const playerMatch = html1.match(/(https?:\/\/[^"'\s]+\/video_player\?player_token=[^"'\s]+)/);
     const playerUrl = playerMatch?.[1];
     if (!playerUrl) {
-      return NextResponse.json({ error: 'لم يتم العثور على مشغل الفيديو في هذه الصفحة' }, { status: 404 });
+      return NextResponse.json({ error: 'لم يتم العثور على مشغل الفيديو (تأكد أن الرابط يخص فيلم وليس بوستر)' }, { status: 404 });
     }
 
-    // 3. جلب كود المشغل الداخلي
     const res2 = await fetch(playerUrl, { headers: { ...headers, Referer: url } });
     const html2 = await res2.text();
 
-    // 4. تصفية واستخراج كود الجافاسكريبت المشفر بالكامل
     const scripts = html2.match(/<script[^>]*>([\s\S]*?)<\/script>/gi) || [];
     let targetScript = '';
     for (const s of scripts) {
@@ -39,9 +51,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'لم يتم العثور على الكود المشفر للمشغل' }, { status: 404 });
     }
 
-    // --- بناء بيئة وهمية (Sandbox) لا يمكن كسرها ---
-
-    // 1. الثقب الأسود لامتصاص الدوال العشوائية وإرجاع قيم فارغة آمنة
     const blackholeProxy: any = new Proxy(function() {}, {
       get: (target: any, prop: string | symbol) => {
         if (prop === Symbol.toPrimitive || prop === 'toString') return () => '';
@@ -53,16 +62,13 @@ export async function POST(req: Request) {
       construct: () => blackholeProxy
     });
 
-    // 2. محاكاة ذكية لـ jQuery ($) لتنفيذ الأكواد المخفية بداخله بدلاً من تجاهلها
     const jqueryMock: any = new Proxy(function(arg: any) {
-      // إذا كان السكربت يحاول تشغيل دالة مثل $(function(){...})
       if (typeof arg === 'function') {
         try { arg(); } catch (e) {}
       }
       return jqueryMock;
     }, {
       get: (target: any, prop: string | symbol) => {
-        // إذا استدعى $(document).ready(function(){...})
         if (prop === 'ready') {
           return (fn: any) => {
             if (typeof fn === 'function') {
@@ -86,8 +92,6 @@ export async function POST(req: Request) {
 
     const sandbox: Record<string, any> = {
       extractedUrl: '',
-      
-      // 3. محاكاة JWPlayer لاصطياد الرابط وتمتص باقي الدوال (مثل .on)
       jwplayer: () => {
         const playerInstance = new Proxy({
           setup: (conf: any) => {
@@ -103,31 +107,22 @@ export async function POST(req: Request) {
         });
         return playerInstance;
       },
-
-      // 4. حقن الـ jQuery في البيئة
       $: jqueryMock,
       jQuery: jqueryMock,
-
-      // 5. حماية كائنات المتصفح الأساسية (document و window)
       document: new Proxy({
         getElementById: () => blackholeProxy,
         querySelector: () => blackholeProxy,
       }, {
         get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy
       }),
-      window: new Proxy({
-        location: { href: '' }
-      }, {
+      window: new Proxy({ location: { href: '' } }, {
         get: (target: any, prop: string | symbol) => prop in target ? target[prop as keyof typeof target] : blackholeProxy
       }),
       navigator: blackholeProxy,
-      
-      // دوال فك التشفير الأساسية
       atob: (str: string) => Buffer.from(str, 'base64').toString('binary'),
       btoa: (str: string) => Buffer.from(str, 'binary').toString('base64'),
     };
 
-    // 6. تشغيل السكربت في البيئة المحمية
     vm.createContext(sandbox);
     vm.runInContext(targetScript + ';', sandbox);
 
