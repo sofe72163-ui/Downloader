@@ -10,13 +10,12 @@ export async function GET(req: Request) {
   
   if (!query) return NextResponse.json({ error: 'الرجاء إدخال كلمة البحث' }, { status: 400 });
 
-  // 🔴🔴🔴 ركز هنا 🔴🔴🔴
-  // غير هذا الرابط إلى الرابط الحقيقي والفعال للموقع (بدون / في النهاية)
-  const baseUrl = 'https://web91112x.faselhdx.life'; 
-  
+  const baseUrl = 'https://web91112x.faselhdx.life';
+  // بناء الرابط تماماً مثل الرابط الذي فتحته أنت في المتصفح
   const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
   
-  const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(searchUrl)}`;
+  // تفعيل render: true في ScraperAPI لضمان جلب الصفحة كاملة حتى لو كانت تتطلب جافاسكريبت
+  const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&render=true&url=${encodeURIComponent(searchUrl)}`;
 
   try {
     const res = await fetch(proxyUrl);
@@ -25,8 +24,8 @@ export async function GET(req: Request) {
     const $ = cheerio.load(html);
     const results: any[] = [];
 
-    // وسعنا كلاسات البحث لتشمل قوالب إضافية لضمان اصطياد النتائج
-    $('.post-div, .item, .movie, .post, .col-md-2, .col-sm-4, .col-6, .h-block, .postDiv').each((i, el) => {
+    // البحث الدقيق داخل العناصر التي تحتوي على الأفلام والمسلسلات في نتائج البحث
+    $('.post-div, .item, .movie, .post, .col-md-2, .col-sm-4, .col-6, .h-block, .postDiv, article').each((i, el) => {
       const title = $(el).find('.title, .post-title, h2, h3, h1, div[class*="title"]').text().trim();
       const url = $(el).find('a').attr('href') || '';
       let image = $(el).find('img').attr('data-src') || $(el).find('img').attr('src') || '';
@@ -42,10 +41,9 @@ export async function GET(req: Request) {
     });
 
     if (results.length === 0) {
-      // الكاشف: سيعرض لك عنوان الصفحة التي دخلها الوسيط لتعرف ما حدث بالضبط
       const pageTitle = $('title').text().trim() || 'بدون عنوان';
       return NextResponse.json({ 
-        error: `لم نجد نتائج. (عنوان الصفحة المسحوبة: ${pageTitle}) - تأكد من أن baseUrl هو الرابط الصحيح للموقع.` 
+        error: `لم نجد نتائج. (عنوان الصفحة المسحوبة: ${pageTitle})` 
       }, { status: 404 });
     }
 
