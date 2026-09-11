@@ -10,10 +10,12 @@ export async function GET(req: Request) {
   
   if (!query) return NextResponse.json({ error: 'الرجاء إدخال كلمة البحث' }, { status: 400 });
 
-  const baseUrl = 'https://web91112x.faselhdx.life';
+  // 🔴🔴🔴 ركز هنا 🔴🔴🔴
+  // غير هذا الرابط إلى الرابط الحقيقي والفعال للموقع (بدون / في النهاية)
+  const baseUrl = 'https://web91112x.faselhdx.life'; 
+  
   const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
   
-  // توجيه الطلب عبر شبكة ScraperAPI لتخطي كلاودفلير
   const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(searchUrl)}`;
 
   try {
@@ -23,15 +25,16 @@ export async function GET(req: Request) {
     const $ = cheerio.load(html);
     const results: any[] = [];
 
-    $('.post-div, .item, .movie, .post, .col-md-2, .col-sm-4, .col-6, .h-block').each((i, el) => {
-      const title = $(el).find('.title, .post-title, h2, h3').text().trim();
+    // وسعنا كلاسات البحث لتشمل قوالب إضافية لضمان اصطياد النتائج
+    $('.post-div, .item, .movie, .post, .col-md-2, .col-sm-4, .col-6, .h-block, .postDiv').each((i, el) => {
+      const title = $(el).find('.title, .post-title, h2, h3, h1, div[class*="title"]').text().trim();
       const url = $(el).find('a').attr('href') || '';
       let image = $(el).find('img').attr('data-src') || $(el).find('img').attr('src') || '';
       
       if (image.startsWith('//')) image = 'https:' + image;
       else if (image.startsWith('/')) image = baseUrl + image;
 
-      const isSeries = url.includes('series') || url.includes('asian-') || url.includes('season');
+      const isSeries = url.includes('series') || url.includes('asian-') || url.includes('season') || url.includes('episode');
 
       if (title && url) {
         results.push({ title, url, image, isSeries });
@@ -39,7 +42,11 @@ export async function GET(req: Request) {
     });
 
     if (results.length === 0) {
-      return NextResponse.json({ error: `لم نجد نتائج. (تأكد من كتابة الاسم بشكل صحيح)` }, { status: 404 });
+      // الكاشف: سيعرض لك عنوان الصفحة التي دخلها الوسيط لتعرف ما حدث بالضبط
+      const pageTitle = $('title').text().trim() || 'بدون عنوان';
+      return NextResponse.json({ 
+        error: `لم نجد نتائج. (عنوان الصفحة المسحوبة: ${pageTitle}) - تأكد من أن baseUrl هو الرابط الصحيح للموقع.` 
+      }, { status: 404 });
     }
 
     return NextResponse.json({ results });
