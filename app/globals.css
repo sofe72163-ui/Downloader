@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-console-950 text-ink antialiased;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(94, 234, 212, 0.05), transparent 40%),
+      radial-gradient(circle at 88% 92%, rgba(94, 234, 212, 0.04), transparent 45%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: rgba(94, 234, 212, 0.25);
+    color: #ffffff;
+  }
+
+  /* Visible keyboard focus, always */
+  :focus-visible {
+    outline: 2px solid #5EEAD4;
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .hairline {
+    @apply border-console-line;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Slim, console-appropriate scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0D10;
+}
+::-webkit-scrollbar-thumb {
+  background: #252C34;
+  border-radius: 999px;
+  border: 2px solid #0A0D10;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #333C46;
+}
