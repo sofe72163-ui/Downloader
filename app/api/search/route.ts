@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
-const SCRAPER_API_KEY = '18b709da5bed0adaaf65b966b3e6dd1e';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -12,24 +11,38 @@ export async function GET(req: Request) {
 
   const baseUrl = 'https://web91112x.faselhdx.life';
   const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
+  const results: any[] = [];
   
-  // الرابط النظيف الخالي من أي إضافات تسبب رفض الحساب المجاني
-  const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(searchUrl)}`;
+  // لا وجود لـ ScraperAPI بعد الآن! نستخدم وكلاء مجانيين
+  const proxies = [
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(searchUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(searchUrl)}`
+  ];
 
-  try {
-    const res = await fetch(proxyUrl);
-    const html = await res.text();
+  let html = '';
+  let success = false;
 
+  // الخطة أ: محاولة تخطي كلاودفلير بالسيرفرات البديلة
+  for (const proxy of proxies) {
+    if (success) break;
+    try {
+      const res = await fetch(proxy, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }
+      });
+      const text = await res.text();
+      if (text.includes('postInner') || text.includes('fasel')) {
+        html = text;
+        success = true;
+      }
+    } catch (err) {}
+  }
+
+  if (success) {
     const $ = cheerio.load(html);
-    const results: any[] = [];
-
-    // استهداف جميع الكلاسات المحتملة بناءً على الكود الذي جلبته من الموقع
     $('.postInner, .postDiv, .post-div, .item').each((i, el) => {
       const parentA = $(el).closest('a').length ? $(el).closest('a') : $(el).find('a').first();
       const url = parentA.attr('href') || '';
-      
       const title = $(el).find('.h1, .title, .post-title').text().trim() || parentA.find('img').attr('alt')?.trim() || '';
-      
       let image = parentA.find('img').attr('data-src') || parentA.find('img').attr('src') || '';
       
       if (image.startsWith('//')) image = 'https:' + image;
@@ -37,23 +50,54 @@ export async function GET(req: Request) {
 
       const isSeries = url.includes('series') || url.includes('asian-') || url.includes('season') || url.includes('episode');
 
-      if (title && url) {
-        if (!results.some(r => r.url === url)) {
-          results.push({ title, url, image, isSeries });
-        }
+      if (title && url && !results.some(r => r.url === url)) {
+        results.push({ title, url, image, isSeries });
       }
     });
-
-    if (results.length === 0) {
-      // إرجاع جزء من الكود المستلم لمعرفة هل الموقع رجع كابتشا أم صفحة فارغة
-      const snippet = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 150);
-      return NextResponse.json({ 
-        error: `لم نجد نتائج. (المحتوى المستلم: ${snippet})` 
-      }, { status: 404 });
-    }
-
-    return NextResponse.json({ results });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // الخطة ب (النووية): إذا فشلنا بسبب كلاودفلير، نسحب الروابط من محرك بحث DuckDuckGo الخارجي!
+  if (results.length === 0) {
+    try {
+      const ddgUrl = `https://html.duckduckgo.com/html/?q=site:${baseUrl}+${encodeURIComponent(query)}`;
+      const ddgRes = await fetch(ddgUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+      });
+      const ddgHtml = await ddgRes.text();
+      const $ddg = cheerio.load(ddgHtml);
+      
+      $ddg('.result').each((i, el) => {
+        const rawHref = $ddg(el).find('.result__url').attr('href') || '';
+        let url = '';
+        
+        // فك تشفير رابط محرك البحث لاستخراج رابط الفيلم الحقيقي
+        if (rawHref.includes('uddg=')) {
+          const match = rawHref.match(/uddg=([^&]+)/);
+          if (match) url = decodeURIComponent(match[1]);
+        } else {
+          url = rawHref;
+        }
+
+        let title = $ddg(el).find('.result__title').text().trim();
+        // تنظيف العنوان من الكلمات الزائدة
+        title = title.replace(/ – فاصل اعلاني.*/, '').replace(/ مشاهدة.*/, '').replace(/ مترجم.*/, '');
+        
+        // نتأكد أن الرابط يخص الموقع وأنه لفيلم حقيقي
+        if (url.includes('fasel') && title && url.length > baseUrl.length + 5) {
+           const isSeries = url.includes('series') || url.includes('season');
+           
+           // سيتم وضع الفيلم بدون صورة، لكن الرابط يعمل 100%
+           if (!results.some(r => r.url === url)) {
+             results.push({ title, url, image: '', isSeries });
+           }
+        }
+      });
+    } catch (e) {}
+  }
+
+  if (results.length === 0) {
+    return NextResponse.json({ error: `بحثنا بكل الطرق الممكنة ولم نجد نتيجة لـ: ${query}` }, { status: 404 });
+  }
+
+  return NextResponse.json({ results });
 }
