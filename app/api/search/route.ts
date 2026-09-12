@@ -10,11 +10,11 @@ export async function GET(req: Request) {
   
   if (!query) return NextResponse.json({ error: 'الرجاء إدخال كلمة البحث' }, { status: 400 });
 
-  const baseUrl = 'https://web9120x.faselhdx.life';
+  const baseUrl = 'https://web91112x.faselhdx.life';
   const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
   
-  // 🔴 السحر هنا: أضفنا &premium=true لتشغيل بروكسي الأجهزة الحقيقية (Residential)
-  const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&premium=true&url=${encodeURIComponent(searchUrl)}`;
+  // الرابط النظيف الخالي من أي إضافات تسبب رفض الحساب المجاني
+  const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(searchUrl)}`;
 
   try {
     const res = await fetch(proxyUrl);
@@ -23,11 +23,12 @@ export async function GET(req: Request) {
     const $ = cheerio.load(html);
     const results: any[] = [];
 
-    $('.postInner').each((i, el) => {
-      const parentA = $(el).closest('a');
+    // استهداف جميع الكلاسات المحتملة بناءً على الكود الذي جلبته من الموقع
+    $('.postInner, .postDiv, .post-div, .item').each((i, el) => {
+      const parentA = $(el).closest('a').length ? $(el).closest('a') : $(el).find('a').first();
       const url = parentA.attr('href') || '';
       
-      const title = $(el).find('.h1').text().trim() || parentA.find('img').attr('alt')?.trim() || '';
+      const title = $(el).find('.h1, .title, .post-title').text().trim() || parentA.find('img').attr('alt')?.trim() || '';
       
       let image = parentA.find('img').attr('data-src') || parentA.find('img').attr('src') || '';
       
@@ -43,13 +44,11 @@ export async function GET(req: Request) {
       }
     });
 
-    // الكاشف الذكي: إذا القائمة فارغة، سيعرض لك ماذا رأى السيرفر في الصفحة
     if (results.length === 0) {
-      const pageTitle = $('title').text().trim() || 'بدون عنوان';
-      // جلب أول 100 حرف من محتوى الصفحة لمعرفة هل هي حماية أم صفحة فارغة
-      const snippet = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 100);
+      // إرجاع جزء من الكود المستلم لمعرفة هل الموقع رجع كابتشا أم صفحة فارغة
+      const snippet = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 150);
       return NextResponse.json({ 
-        error: `لم نجد نتائج. (العنوان: ${pageTitle} | المحتوى: ${snippet})` 
+        error: `لم نجد نتائج. (المحتوى المستلم: ${snippet})` 
       }, { status: 404 });
     }
 
