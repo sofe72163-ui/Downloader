@@ -13,7 +13,6 @@ export async function GET(req: Request) {
   const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
   const results: any[] = [];
   
-  // لا وجود لـ ScraperAPI بعد الآن! نستخدم وكلاء مجانيين
   const proxies = [
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(searchUrl)}`,
     `https://corsproxy.io/?${encodeURIComponent(searchUrl)}`
@@ -56,7 +55,7 @@ export async function GET(req: Request) {
     });
   }
 
-  // الخطة ب (النووية): إذا فشلنا بسبب كلاودفلير، نسحب الروابط من محرك بحث DuckDuckGo الخارجي!
+  // الخطة ب (النووية): إذا فشلنا بسبب كلاودفلير، نسحب الروابط من محرك بحث DuckDuckGo
   if (results.length === 0) {
     try {
       const ddgUrl = `https://html.duckduckgo.com/html/?q=site:${baseUrl}+${encodeURIComponent(query)}`;
@@ -70,23 +69,22 @@ export async function GET(req: Request) {
         const rawHref = $ddg(el).find('.result__url').attr('href') || '';
         let url = '';
         
-        // فك تشفير رابط محرك البحث لاستخراج رابط الفيلم الحقيقي
         if (rawHref.includes('uddg=')) {
           const match = rawHref.match(/uddg=([^&]+)/);
-          if (match) url = decodeURIComponent(match[1]);
+          // هنا تم إصلاح خطأ الـ TypeScript بالتأكد من وجود match[1] كنص
+          if (match && match[1]) {
+            url = decodeURIComponent(match[1]);
+          }
         } else {
           url = rawHref;
         }
 
         let title = $ddg(el).find('.result__title').text().trim();
-        // تنظيف العنوان من الكلمات الزائدة
         title = title.replace(/ – فاصل اعلاني.*/, '').replace(/ مشاهدة.*/, '').replace(/ مترجم.*/, '');
         
-        // نتأكد أن الرابط يخص الموقع وأنه لفيلم حقيقي
         if (url.includes('fasel') && title && url.length > baseUrl.length + 5) {
            const isSeries = url.includes('series') || url.includes('season');
            
-           // سيتم وضع الفيلم بدون صورة، لكن الرابط يعمل 100%
            if (!results.some(r => r.url === url)) {
              results.push({ title, url, image: '', isSeries });
            }
