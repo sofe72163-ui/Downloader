@@ -10,11 +10,10 @@ export async function GET(req: Request) {
   
   if (!query) return NextResponse.json({ error: 'الرجاء إدخال كلمة البحث' }, { status: 400 });
 
-  const baseUrl = 'https://web91112x.faselhdx.life';
-  // بناء الرابط تماماً مثل الرابط الذي فتحته أنت في المتصفح
+  // حدثت الرابط بناءً على ما ظهر في الكود الذي أرسلته
+  const baseUrl = 'https://web9120x.faselhdx.life';
   const searchUrl = `${baseUrl}/?s=${encodeURIComponent(query)}`;
   
-  // تفعيل render: true في ScraperAPI لضمان جلب الصفحة كاملة حتى لو كانت تتطلب جافاسكريبت
   const proxyUrl = `https://api.scraperapi.com/?api_key=${SCRAPER_API_KEY}&render=true&url=${encodeURIComponent(searchUrl)}`;
 
   try {
@@ -24,26 +23,37 @@ export async function GET(req: Request) {
     const $ = cheerio.load(html);
     const results: any[] = [];
 
-    // البحث الدقيق داخل العناصر التي تحتوي على الأفلام والمسلسلات في نتائج البحث
-    $('.post-div, .item, .movie, .post, .col-md-2, .col-sm-4, .col-6, .h-block, .postDiv, article').each((i, el) => {
-      const title = $(el).find('.title, .post-title, h2, h3, h1, div[class*="title"]').text().trim();
-      const url = $(el).find('a').attr('href') || '';
-      let image = $(el).find('img').attr('data-src') || $(el).find('img').attr('src') || '';
+    // استهداف دقيق جداً: نبحث عن الـ postInner الذي يضم تفاصيل الفيلم
+    $('.postInner').each((i, el) => {
+      // نصعد للرابط الأب اللي يحتوي على صفحة الفيلم
+      const parentA = $(el).closest('a');
+      const url = parentA.attr('href') || '';
       
+      // هنا اصطدنا الخدعة: البحث عن كلاس .h1 وليس واسم <h1>، أو أخذ العنوان من الصورة
+      const title = $(el).find('.h1').text().trim() || parentA.find('img').attr('alt')?.trim() || '';
+      
+      // سحب بوستر الفيلم
+      let image = parentA.find('img').attr('data-src') || parentA.find('img').attr('src') || '';
+      
+      // تعديل مسار الصورة إذا كان ناقصاً
       if (image.startsWith('//')) image = 'https:' + image;
       else if (image.startsWith('/')) image = baseUrl + image;
 
+      // فحص هل هو مسلسل أم فيلم
       const isSeries = url.includes('series') || url.includes('asian-') || url.includes('season') || url.includes('episode');
 
+      // إذا اكتملت الشروط، نضيفه للنتائج بدون تكرار
       if (title && url) {
-        results.push({ title, url, image, isSeries });
+        if (!results.some(r => r.url === url)) {
+          results.push({ title, url, image, isSeries });
+        }
       }
     });
 
     if (results.length === 0) {
       const pageTitle = $('title').text().trim() || 'بدون عنوان';
       return NextResponse.json({ 
-        error: `لم نجد نتائج. (عنوان الصفحة المسحوبة: ${pageTitle})` 
+        error: `لم نجد نتائج مطابقة.` 
       }, { status: 404 });
     }
 
